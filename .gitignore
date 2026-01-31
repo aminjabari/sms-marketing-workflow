@@ -1,0 +1,18 @@
+# تنظیمات شخصی IDE
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# وابستگی‌های پروژه (بسیار مهم)
+node_modules/
+vendor/
+
+# فایل‌های لاگ و سیستم‌عامل
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# فایل‌های حساس (اگر دارید)
+.env
