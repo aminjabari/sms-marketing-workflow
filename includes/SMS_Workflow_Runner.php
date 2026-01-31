@@ -376,72 +376,44 @@ class SMS_Workflow_Runner {
 //    }
 
 
+    /**
+     * مثال اصلاح شده از ورکفلو ثبت‌نام کاربر با استفاده از لایه جدید مدیریت ورکفلوها
+     */
     public function example_user_registration_workflow($user_id) {
-
+        // 1. دریافت اطلاعات کاربر و شماره موبایل
         $user = get_user_by( 'id', $user_id );
-        $all_templates = get_option( 'sms_templates', array() );
-
-        if ( count($all_templates) < 2 ) {
-            // ... (لاگ خطا) ...
+        if ( ! $user ) {
             return;
         }
 
         $user_phone = get_user_meta( $user_id, 'billing_phone', true );
         if ( empty( $user_phone ) ) {
-            // ... (لاگ خطا) ...
+            error_log("Workflow Error: User $user_id does not have a billing phone.");
             return;
         }
 
-        // 2. تعریف ثابت‌های ورکفلو
-        $workflow_name = 'ورکفلو ثبت نام جدید';
-        $workflow_category = 'فروش';
-        $days_to_check = 30; // مثلاً بررسی می‌کند که آیا در ۳۰ روز گذشته اجرا شده است؟
-
-        // 3. 🚨 بررسی وجود ورکفلوی فعال/اخیراً اجرا شده 🚨
-        $is_active = $this->has_user_recent_workflow(
-            $user_phone,
-            $workflow_name,
-            $workflow_category,
-            $days_to_check
-        );
-
-        if ($is_active) {
-            // 💡 اگر ورکفلو اخیراً اجرا شده یا فعال است، عملیات متوقف می‌شود
-            // می‌توانید اینجا یک لاگ Skipped ثبت کنید (اختیاری)
-//            error_log("Workflow skipped for user {$user_id}: A recent '{$workflow_name}' was found.");
-            return;
-        }
-
-        // 2. آماده‌سازی داده‌ها
+        // 2. آماده‌سازی داده‌های جایگزینی برای تگ‌ها (مطابق مستندات متد جدید)
         $user_data = array(
-            'name' => $user->display_name,
+            'name'  => $user->display_name,
             'phone' => $user_phone,
         );
 
-        $workflow_steps = [
+        // 3. فراخوانی متد لایه بالاتر برای افزودن کاربر به ورکفلو
+        // این متد به صورت خودکار فعال بودن ورکفلو و عدم تکراری بودن کاربر (در 30 روز اخیر) را چک می‌کند.
+        $result = $this->add_user_to_workflow_by_name(
+            'ورکفلو ثبت نام جدید', // نام دقیق ورکفلو در Builder
+            $user_data,            // اطلاعات برای تگ‌ها
+            $user_phone,           // شماره موبایل مقصد
             [
-                'template_index' => 0,
-                'template_name' => 'هوشمند',
-                'days_after'     => 1,
-                'send_time'      => '10:00',
-                'description'    => 'پیام خوش‌آمدگویی (روز اول)'
-            ],
-            [
-                'template_name' => 'خطرناک',
-                'days_after'     => 2,
-                'send_time'      => '11:00',
-                'description'    => 'پیام پیگیری (روز دوم)'
+                'days_back' => 30, // بازه زمانی اختیاری برای چک کردن سابقه
+                'skip_check' => false // اطمینان از اینکه چک کردن سابقه انجام شود
             ]
-        ];
-
-        // 3. 💡 فراخوانی صحیح متد execute_full_workflow
-        $results = $this->execute_full_workflow(
-            $workflow_steps,
-            $workflow_name,           // Argument #2: string
-            $workflow_category,       // Argument #3: string
-            $user_data,               // Argument #4: array
-            $user_phone               // Argument #5: string (recipient_phone)
         );
+
+        // 4. مدیریت نتیجه (اختیاری)
+        if ( ! $result['success'] ) {
+            error_log("Workflow Dispatch Failed: " . $result['error']);
+        }
     }
 
     public function execute_full_workflow(array $workflow_steps, string $workflow_name, string $workflow_category, array $user_data, string $recipient_phone = null) {
@@ -828,42 +800,6 @@ class SMS_Workflow_Runner {
     }
 
 
-    /**
-     * استخراج تمام جزئیات WorkFlow (نام، دسته‌بندی و مراحل) برای یک WorkFlow مشخص.
-     *
-     * @param string $workflow_name نام ورکفلو مورد نظر.
-     * @return array|bool آرایه‌ای کامل از WorkFlow یا false در صورت عدم وجود.
-     */
-    public static function get_workflow_steps_by_name(string $workflow_name) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'sms_workflows';
-
-        // 1. 🚨 واکشی تمام ستون‌های لازم (برای دریافت نام، دسته‌بندی و داده‌ها)
-        $workflow = $wpdb->get_row(
-            $wpdb->prepare("SELECT name, category, workflow_data FROM {$table_name} WHERE name = %s", $workflow_name),
-            ARRAY_A
-        );
-
-        if (empty($workflow) || !isset($workflow['workflow_data'])) {
-            return false; // WorkFlow یافت نشد یا داده‌ای ندارد
-        }
-
-        // 2. دیکد (Decode) کردن داده‌های مراحل
-        $data = maybe_unserialize($workflow['workflow_data']);
-
-        // 3. بررسی ساختار و ساختاردهی خروجی نهایی
-        if (is_array($data) && isset($data['steps']) && is_array($data['steps'])) {
-
-            // 🚨 ساختاردهی خروجی مطابق با درخواست:
-            return [
-                'name' => $workflow['name'],                // 👈 نام ورکفلو
-                'category' => $workflow['category'],        // 👈 دسته‌بندی ورکفلو
-                'steps' => $data['steps'],                  // 👈 آرایه مراحل WorkFlow
-            ];
-        }
-
-        return false; // ساختار داده‌های مراحل نامعتبر است
-    }
 
     /**
      * چاپ جدول HTML گزارش‌های عیب‌یابی (Debug Log) بر اساس self::$debug_log
@@ -888,6 +824,79 @@ class SMS_Workflow_Runner {
 
         // 💡 پاکسازی آرایه لاگ پس از نمایش
         self::$debug_log = [];
+    }
+
+    /**
+     * افزودن کاربر به یک ورکفلو بر اساس نام (تعریف شده در Builder)
+     * * @param string $workflow_name نام دقیق ورکفلو در WorkFlow Builder.
+     * @param array  $user_data      اطلاعات کاربر برای تگ‌ها (مانند ['name' => '..', 'phone' => '..']).
+     * @param string $recipient_phone شماره موبایل مقصد.
+     * @param array  $options {
+     * تنظیمات اختیاری برای کنترل رفتار متد:
+     * @type bool $skip_check   اگر true باشد، بررسی تکراری بودن کاربر انجام نمی‌شود (پیش‌فرض: false).
+     * @type int  $days_back    تعداد روزهای بازگشت به عقب برای چک کردن سابقه (پیش‌فرض: 30).
+     * }
+     * * @return array وضعیت اجرای عملیات.
+     */
+    public function add_user_to_workflow_by_name(string $workflow_name, array $user_data, string $recipient_phone, array $options = []) {
+        global $wpdb;
+        $table_workflows = $wpdb->prefix . 'sms_workflows';
+
+        // 1. استخراج تنظیمات اختیاری با مقادیر پیش‌فرض
+        $skip_check = isset($options['skip_check']) ? (bool) $options['skip_check'] : false;
+        $days_back  = isset($options['days_back']) ? (int) $options['days_back'] : 30;
+
+        // 2. واکشی اطلاعات ورکفلو و بررسی وضعیت فعال بودن
+        $workflow = $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT name, category, workflow_data, is_active FROM {$table_workflows} WHERE name = %s",
+                $workflow_name
+            ),
+            ARRAY_A
+        );
+
+        if ( ! $workflow ) {
+            error_log("SMS Workflow Error: Workflow '$workflow_name' not found.");
+            return ['success' => false, 'error' => 'ورکفلو یافت نشد.'];
+        }
+
+        if ( (int) $workflow['is_active'] !== 1 ) {
+            return ['success' => false, 'error' => 'ورکفلو در حال حاضر غیرفعال است.'];
+        }
+
+        // 3. بررسی سابقه کاربر (مگر اینکه skip_check فعال باشد)
+        if ( ! $skip_check ) {
+            $already_exists = $this->has_user_recent_workflow(
+                $recipient_phone,
+                $workflow['name'],
+                $workflow['category'],
+                $days_back
+            );
+
+            if ( $already_exists ) {
+                return [
+                    'success' => false,
+                    'error'   => "کاربر قبلاً در بازه $days_back روزه در این ورکفلو عضو شده است."
+                ];
+            }
+        }
+
+        // 4. استخراج مراحل (Steps)
+        $data = maybe_unserialize( $workflow['workflow_data'] );
+        $steps = ( is_array( $data ) && isset( $data['steps'] ) ) ? $data['steps'] : [];
+
+        if ( empty( $steps ) ) {
+            return ['success' => false, 'error' => 'این ورکفلو هیچ مرحله‌ای برای اجرا ندارد.'];
+        }
+
+        // 5. ثبت در دیتابیس لاگ‌ها
+        return $this->execute_full_workflow(
+            $steps,
+            $workflow['name'],
+            $workflow['category'] ?? 'General',
+            $user_data,
+            $recipient_phone
+        );
     }
 
 
