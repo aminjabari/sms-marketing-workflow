@@ -448,7 +448,7 @@ class Workflow_Builder_UI {
             name VARCHAR(255) NOT NULL,
             category VARCHAR(255) NULL,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
-            workflow_data LONGTEXT NULL, /* 👈 ذخیره مراحل زمان‌بندی شده */
+            workflow_data LONGTEXT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
             UNIQUE KEY name_idx (name)

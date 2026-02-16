@@ -46,7 +46,7 @@ class SMS_DB_Manager {
         recipient VARCHAR(20) NOT NULL,
         status VARCHAR(50) NOT NULL,
         message_id TEXT NULL, 
-        log_data LONGTEXT NULL, /* حاوی تمام جزئیات مراحل، پیام‌ها و تلاش‌ها */
+        log_data LONGTEXT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, 
         PRIMARY KEY (id)
     ) " . $charset_collate . ";";
